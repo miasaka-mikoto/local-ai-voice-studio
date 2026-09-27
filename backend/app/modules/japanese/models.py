@@ -213,6 +213,7 @@ class ConversationTurn:
     transcript: TranscriptResult
     teacher: TeacherResult
     demonstration: SynthesisResult
+    exercise_id: str | None = None
     id: str = field(default_factory=lambda: new_id("turn"))
     scoring_source_kind: SourceAudioKind = SourceAudioKind.ORIGINAL_UNCOLORED
     created_at: str = field(default_factory=utc_now)

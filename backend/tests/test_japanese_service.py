@@ -3,10 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sqlite3
 import sys
 import tempfile
 import unittest
 import wave
+from contextlib import closing
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +37,26 @@ from app.modules.japanese.service import JapaneseLearningService, JapaneseServic
 
 
 class JapaneseServiceTests(unittest.TestCase):
+    def test_role_play_exercise_column_migrates_forward_from_v2(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "legacy.sqlite3"
+            with closing(sqlite3.connect(database)) as connection:
+                connection.execute(
+                    "CREATE TABLE jp_turns (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, "
+                    "recording_id TEXT, sequence INTEGER NOT NULL)"
+                )
+                connection.commit()
+            JapaneseRepository(database)
+            with closing(sqlite3.connect(database)) as connection:
+                columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(jp_turns)")
+                }
+                migration = connection.execute(
+                    "SELECT name FROM jp_schema_migrations WHERE version = 3"
+                ).fetchone()
+            self.assertIn("exercise_id", columns)
+            self.assertEqual(migration[0], "exercise_scoped_role_play_turns")
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)

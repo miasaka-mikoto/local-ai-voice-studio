@@ -182,7 +182,11 @@ class MockTeacherAdapter:
             feedback = ["没有可用转写；请重录并确认麦克风输入。"]
             confidence = 0.9
         else:
-            reply = f"いいですね。{scenario}の場面でもう一度言ってみましょう。"
+            reply = (
+                "はい、承知しました。では、続けてください。"
+                if payload.get("task") == "project_role_play_turn"
+                else f"いいですね。{scenario}の場面でもう一度言ってみましょう。"
+            )
             feedback = repair.issues or ["mock 教师仅确认收到内容，未作完整自然度判断。"]
             confidence = repair.confidence
         return TeacherResult(
@@ -215,6 +219,11 @@ class OpenAICompatibleTeacherAdapter:
             "repair（original、minimal_correction、natural_expression、model_answer、issues、confidence、evidence）。"
             "每项判断要承认不确定性，不给伪精确总分。"
         )
+        if payload.get("task") == "project_role_play_turn":
+            system += (
+                "当前是项目台词角色扮演。先以场景中的对话对象身份自然回复用户，再给出最多两项具体纠错；"
+                "目标台词与来源场景在用户 JSON 中，不能把目标台词匹配视作发音已被准确测量。"
+            )
         body = json.dumps(
             {
                 "model": self.model,

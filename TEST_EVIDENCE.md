@@ -4,9 +4,9 @@
 
 | 检查 | 结果 |
 |---|---|
-| `cd backend && python -B -m unittest discover -s tests -v` | 68/68 通过 |
+| `cd backend && python -B -m unittest discover -s tests -v` | 70/70 通过 |
 | `python -B -m unittest discover -s adapters\tests -v` | 46/46 通过 |
-| `cd frontend && npm run test` | 46/46 通过 |
+| `cd frontend && npm run test` | 47/47 通过 |
 | `cd frontend && npm run build` | TypeScript 与 Vite 构建通过 |
 
 测试使用临时数据库、合成音频和 Mock 组件，不启动或下载大型模型。构建有一个 Vite 大 chunk 提示（懒加载 Three.js），不是失败。浏览器端真实麦克风、外部模型和商业许可没有在此记录中宣称验收。
@@ -17,7 +17,7 @@
 
 参考音完整性新增 PCM16/PCM24、非 WAV、仅头部截断 WAV、无效 TTS 输出清理、已保存参考音损坏后拒绝媒体读取及评分回归。用户已有参考音不会因创建失败被删除；测试原声上传使用独立合成麦克风波形，不使用 MockTTS 输出冒充原录音。
 
-项目课程新增 `GET /api/japanese/sessions/{session_id}/exercises`，后端回归覆盖建课、重开读取练习、受控参考音，以及使用独立上传原录音的跟读尝试。前端回归覆盖项目课程创建、刷新恢复、`recording_id` 上传/提交契约和界面状态。听写输入目前仅供自查，角色扮演仅预览；两者尚不保存或评分回应，不能视为完整学习模式验收。
+项目课程新增 `GET /api/japanese/sessions/{session_id}/exercises`，后端回归覆盖建课、重开读取练习、受控参考音，以及使用独立上传原录音的跟读尝试。角色扮演再新增练习绑定轮次接口：服务端拒绝跨会话和错误类型练习，目标台词来自已保存练习；HTTP 回归覆盖原声上传、教师示范、重开后按 `exercise_id` 找回轮次。v2→v3 迁移测试确认旧轮次表可增量添加绑定列。前端回归覆盖项目课程创建、刷新恢复、`recording_id` 上传/提交契约和界面状态。听写输入目前仅供自查，不保存或评分；角色扮演回应已保存，但真实麦克风和教师质量仍未验收。
 
 ## 本机启动烟雾检查
 

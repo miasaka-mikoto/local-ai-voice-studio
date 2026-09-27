@@ -40,7 +40,7 @@ Windows 启动脚本见 `backend/start_backend.ps1` 与 `frontend/start_frontend
 
 浏览器把原始 Blob 以 raw body 上传至 `POST /api/japanese/recordings?session_id=...&filename=...`，并保留实际 `Content-Type`。响应的 `recording_id` 是后续会话轮次和影子跟读提交的唯一录音引用；客户端不提交文件路径或自报 `source_kind`。后端用不可变来源记录核验 session、上传入口、文件大小和 SHA-256；所有评分只看染色前的原录音。静音或活动帧不足时分项值为空、置信度为零，提示重录；转写提示不能绕过语音证据。反馈分为内容、节奏与 F0，含证据、局限和置信度，不生成伪精确总分。
 
-项目详情的“日语课程”可将日语台词转换为听写、影子跟读或角色扮演练习。课程与练习保存在 SQLite；刷新后先按项目找回学习会话，再通过 `GET /api/japanese/sessions/{session_id}/exercises` 读取练习。参考音只通过受控媒体 URL 播放。影子跟读会先上传新录制的原声，取得 `recording_id` 后提交并保存分项反馈。听写目前仅供自查、不会保存或评分输入；角色扮演目前仅预览台词，尚未保存或评分回应。
+项目详情的“日语课程”可将日语台词转换为听写、影子跟读或角色扮演练习。课程与练习保存在 SQLite；刷新后先按项目找回学习会话，再通过 `GET /api/japanese/sessions/{session_id}/exercises` 读取练习。参考音只通过受控媒体 URL 播放。影子跟读会先上传新录制的原声，取得 `recording_id` 后提交并保存分项反馈。角色扮演也可录制原声，由已保存练习决定目标台词，提交后保存教师回应与示范音，刷新后可找回。听写目前仅供自查、不会保存或评分输入；角色扮演反馈也只是教师或 Mock 的建议，不是客观口语准确率。
 
 ## 验证与边界
 

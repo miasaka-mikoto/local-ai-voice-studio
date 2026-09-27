@@ -87,6 +87,26 @@ describe("JapaneseLearningApi contract", () => {
     expect(attemptBody).not.toHaveProperty("source_kind");
   });
 
+  it("submits role-play audio by provenance id and exercise id, then reloads turns", async () => {
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => ok({ id: "turn-1", exercise_id: "exercise/1" }, 201))
+      .mockImplementationOnce(() => ok([{ id: "turn-1", exercise_id: "exercise/1" }]));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new JapaneseLearningApi("http://127.0.0.1:8766");
+
+    await api.submitRolePlayTurn("session/1", "exercise/1", "recording-1");
+    await api.listTurns("session/1");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "http://127.0.0.1:8766/api/japanese/sessions/session%2F1/role-play/exercises/exercise%2F1/turns",
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      recording_id: "recording-1",
+      voice_role: "standard_tokyo",
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe("http://127.0.0.1:8766/api/japanese/sessions/session%2F1/turns");
+  });
+
   it("uses recording_id for the direct shadowing endpoint too", async () => {
     const fetchMock = vi.fn().mockImplementation(() => ok({ attempt_id: "attempt-1" }, 201));
     vi.stubGlobal("fetch", fetchMock);

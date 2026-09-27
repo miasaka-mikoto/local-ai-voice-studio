@@ -161,6 +161,7 @@ class JapaneseRepository:
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL REFERENCES jp_sessions(id),
                     recording_id TEXT NOT NULL REFERENCES jp_recordings(id),
+                    exercise_id TEXT REFERENCES jp_exercises(id),
                     sequence INTEGER NOT NULL,
                     original_audio_path TEXT NOT NULL,
                     original_audio_sha256 TEXT NOT NULL,
@@ -250,6 +251,18 @@ class JapaneseRepository:
                 """
                 INSERT OR IGNORE INTO jp_schema_migrations(version, name, applied_at)
                 VALUES (2, 'immutable_recording_provenance_and_atomic_turns', datetime('now'))
+                """
+            )
+            self._ensure_column(
+                connection, "jp_turns", "exercise_id", "TEXT REFERENCES jp_exercises(id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_jp_turns_exercise ON jp_turns(exercise_id)"
+            )
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO jp_schema_migrations(version, name, applied_at)
+                VALUES (3, 'exercise_scoped_role_play_turns', datetime('now'))
                 """
             )
 
@@ -464,15 +477,16 @@ class JapaneseRepository:
         connection.execute(
             """
             INSERT INTO jp_turns (
-                id, session_id, recording_id, sequence, original_audio_path,
+                id, session_id, recording_id, exercise_id, sequence, original_audio_path,
                 original_audio_sha256, scoring_source_kind,
                 transcript_json, teacher_json, demonstration_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 turn.id,
                 turn.session_id,
                 turn.recording_id,
+                turn.exercise_id,
                 turn.sequence,
                 turn.original_audio_path,
                 turn.original_audio_sha256,

@@ -90,6 +90,95 @@ def json_body(value: dict) -> bytes:
 
 
 class JapaneseHttpFlowTests(unittest.TestCase):
+    def test_role_play_turn_is_exercise_scoped_and_reopens(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "studio.sqlite3"
+            assets = root / "assets"
+            service = JapaneseLearningService(
+                JapaneseRepository(database), assets,
+                AdapterBundle(MockASRAdapter(), MockTeacherAdapter(), MockTTSAdapter()),
+            )
+            learner = service.create_learner("角色扮演学习者", "N4", [], [])
+            lesson = service.create_project_lesson(
+                learner.id, "project-role", "role_play",
+                [{"line_id": "line-1", "text": "新宿までお願いします"}],
+            )
+            session_id = lesson["session"]["id"]
+            exercise_id = lesson["exercises"][0]["id"]
+            other_lesson = service.create_project_lesson(
+                learner.id, "project-other", "role_play", [{"text": "こんにちは"}],
+            )
+            shadow_lesson = service.create_project_lesson(
+                learner.id, "project-shadow", "shadowing", [{"text": "ありがとうございます"}],
+            )
+            application = FastAPI()
+            application.include_router(create_router(service))
+
+            microphone = root / "role-microphone.wav"
+            with wave.open(str(microphone), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(3)
+                wav.setframerate(48_000)
+                wav.writeframes(b"".join(
+                    int(0.16 * 8_388_607 * math.sin(2 * math.pi * 210 * index / 48_000)).to_bytes(
+                        3, "little", signed=True
+                    ) for index in range(9_600)
+                ))
+            status, _, body = asyncio.run(asgi_request(
+                application, "POST", "/api/japanese/recordings",
+                query={"session_id": session_id, "filename": "role-microphone.wav"},
+                body=microphone.read_bytes(), content_type="audio/wav",
+            ))
+            self.assertEqual(status, 201)
+            recording_id = json.loads(body)["recording_id"]
+            endpoint = f"/api/japanese/sessions/{session_id}/role-play/exercises"
+            for wrong_exercise_id in (
+                other_lesson["exercises"][0]["id"],
+                shadow_lesson["exercises"][0]["id"],
+            ):
+                status, _, _ = asyncio.run(asgi_request(
+                    application, "POST", f"{endpoint}/{wrong_exercise_id}/turns",
+                    body=json_body({"recording_id": recording_id}),
+                    content_type="application/json",
+                ))
+                self.assertEqual(status, 400)
+            self.assertEqual(service.repository.counts()["turns"], 0)
+
+            status, _, body = asyncio.run(asgi_request(
+                application, "POST", f"{endpoint}/{exercise_id}/turns",
+                body=json_body({
+                    "recording_id": recording_id,
+                    "transcript_hint": "新宿までお願いします",
+                }),
+                content_type="application/json",
+            ))
+            self.assertEqual(status, 201)
+            turn = json.loads(body)
+            self.assertEqual(turn["exercise_id"], exercise_id)
+            self.assertEqual(turn["recording_id"], recording_id)
+            self.assertEqual(turn["scoring_source_kind"], "original_uncolored")
+            self.assertIn("承知", turn["teacher"]["reply_text"])
+
+            reopened = JapaneseLearningService(
+                JapaneseRepository(database), assets,
+                AdapterBundle(MockASRAdapter(), MockTeacherAdapter(), MockTTSAdapter()),
+            )
+            reopened_app = FastAPI()
+            reopened_app.include_router(create_router(reopened))
+            status, _, body = asyncio.run(asgi_request(
+                reopened_app, "GET", f"/api/japanese/sessions/{session_id}/turns"
+            ))
+            self.assertEqual(status, 200)
+            saved = json.loads(body)
+            self.assertEqual(len(saved), 1)
+            self.assertEqual(saved[0]["exercise_id"], exercise_id)
+            status, _, audio = asyncio.run(asgi_request(
+                reopened_app, "GET", saved[0]["demonstration"]["audio_url"]
+            ))
+            self.assertEqual(status, 200)
+            self.assertEqual(audio[:4], b"RIFF")
+
     def test_project_lesson_reopens_and_scores_only_uploaded_original(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

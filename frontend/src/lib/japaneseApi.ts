@@ -207,6 +207,7 @@ export interface JapaneseTurnResponse {
   id: string;
   session_id: string;
   recording_id: string;
+  exercise_id: string | null;
   sequence: number;
   original_audio_path: string;
   original_audio_sha256: string;
@@ -423,6 +424,16 @@ export class JapaneseLearningApi {
         voice_role: input.voiceRole ?? "standard_tokyo",
       }),
     });
+  }
+
+  submitRolePlayTurn(sessionId: string, exerciseId: string, recordingId: string) {
+    return this.json<JapaneseTurnResponse>(
+      `/api/japanese/sessions/${encodeURIComponent(sessionId)}/role-play/exercises/${encodeURIComponent(exerciseId)}/turns`,
+      {
+        method: "POST",
+        body: JSON.stringify({ recording_id: recordingId, voice_role: "standard_tokyo" }),
+      },
+    );
   }
 
   analyzeShadowing(sessionId: string, input: {

@@ -304,10 +304,25 @@ class JapaneseLearningService:
         transcript_hint: str | None = None,
         expected_text: str | None = None,
         voice_role: str = "standard_tokyo",
+        exercise_id: str | None = None,
     ) -> ConversationTurn:
         session = self.get_session(session_id)
         if session.status is not SessionStatus.ACTIVE:
             raise JapaneseServiceError("只有 active 会话可以新增轮次。")
+        role_play_exercise: Exercise | None = None
+        if exercise_id is not None:
+            if session.mode is not LearningMode.PROJECT_LESSON:
+                raise JapaneseServiceError("角色扮演轮次必须属于项目课程。")
+            try:
+                exercise = self.repository.get_exercise(exercise_id)
+            except JapaneseRepositoryError as exc:
+                raise JapaneseServiceError(str(exc)) from exc
+            if exercise.session_id != session_id or exercise.exercise_type is not ExerciseType.ROLE_PLAY:
+                raise JapaneseServiceError("角色扮演练习不属于当前会话或类型不匹配。")
+            if expected_text is not None and expected_text != exercise.expected_text:
+                raise JapaneseServiceError("角色扮演台词必须使用已保存的练习内容。")
+            role_play_exercise = exercise
+            expected_text = exercise.expected_text
         recording_asset, recording_path = self._verified_original_recording(
             session_id, recording_id
         )
@@ -323,13 +338,14 @@ class JapaneseLearningService:
         learner = self.get_learner(session.learner_id)
         teacher = self.adapters.teacher.teach(
             {
-                "task": "half_duplex_conversation_turn",
+                "task": "project_role_play_turn" if role_play_exercise else "half_duplex_conversation_turn",
                 "learner": learner.to_dict(),
                 "session_mode": session.mode.value,
                 "coach_mode": session.coach_mode.value,
                 "scenario": session.scenario,
                 "transcript": transcript.text,
                 "expected_text": expected_text,
+                "source_line": role_play_exercise.metadata if role_play_exercise else None,
             }
         )
         feedback_limit = 1 if session.coach_mode is CoachMode.FLUENT else 2
@@ -375,6 +391,7 @@ class JapaneseLearningService:
                 id=turn_id,
                 session_id=session_id,
                 recording_id=recording_asset.id,
+                exercise_id=exercise_id,
                 sequence=0,
                 original_audio_path=str(recording_path),
                 original_audio_sha256=recording_asset.sha256,

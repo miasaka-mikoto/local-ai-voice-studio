@@ -4,6 +4,7 @@ import { JapaneseLearningApi, ensureJapaneseLearner, readStoredJapaneseLearner }
 import type {
   JapaneseExerciseResponse,
   JapaneseSessionResponse,
+  JapaneseTurnResponse,
   ProjectLessonMode,
   ShadowingApiResponse,
 } from "../lib/japaneseApi";
@@ -15,6 +16,11 @@ const modeLabel: Record<ProjectLessonMode, string> = {
   dictation: "听写",
   shadowing: "影子跟读",
   role_play: "角色扮演",
+};
+
+const recordingFilename = (blob: Blob, prefix: string) => {
+  const extension = blob.type.includes("ogg") ? "ogg" : blob.type.includes("mp4") ? "m4a" : "webm";
+  return `${prefix}.${extension}`;
 };
 
 export const ProjectLessonPanel = ({
@@ -38,6 +44,7 @@ export const ProjectLessonPanel = ({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<ShadowingApiResponse | null>(null);
+  const [rolePlayTurns, setRolePlayTurns] = useState<JapaneseTurnResponse[]>([]);
   const [showAnswer, setShowAnswer] = useState(false);
 
   const japaneseLines = useMemo(
@@ -55,6 +62,7 @@ export const ProjectLessonPanel = ({
   const activeSession = sessions.find((session) => session.id === sessionId);
   const activeExercise = exercises.find((exercise) => exercise.id === exerciseId);
   const activeMode = activeSession?.metadata.lesson_mode as ProjectLessonMode | undefined;
+  const exerciseRolePlayTurns = rolePlayTurns.filter((turn) => turn.exercise_id === exerciseId);
 
   useEffect(() => {
     if (connectionMode !== "api") {
@@ -82,6 +90,7 @@ export const ProjectLessonPanel = ({
     if (!sessionId || connectionMode !== "api") {
       setExercises([]);
       setExerciseId("");
+      setRolePlayTurns([]);
       return;
     }
     let cancelled = false;
@@ -94,6 +103,20 @@ export const ProjectLessonPanel = ({
     });
     return () => { cancelled = true; };
   }, [api, connectionMode, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId || connectionMode !== "api" || activeMode !== "role_play") {
+      setRolePlayTurns([]);
+      return;
+    }
+    let cancelled = false;
+    void api.listTurns(sessionId).then((items) => {
+      if (!cancelled) setRolePlayTurns(items);
+    }).catch((caught) => {
+      if (!cancelled) setError(caught instanceof Error ? caught.message : "无法读取角色扮演记录。");
+    });
+    return () => { cancelled = true; };
+  }, [api, activeMode, connectionMode, sessionId]);
 
   const createLesson = async () => {
     if (connectionMode !== "api" || !selectedLines.length || selectedLines.length > 100) return;
@@ -120,6 +143,7 @@ export const ProjectLessonPanel = ({
       setSessionId(result.session.id);
       setExercises(result.exercises);
       setExerciseId(result.exercises[0]?.id ?? "");
+      setRolePlayTurns([]);
       recorder.clear();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "项目课程创建失败，请重试。");
@@ -134,13 +158,33 @@ export const ProjectLessonPanel = ({
     setError(null);
     setFeedback(null);
     try {
-      const recording = await api.uploadRecording(sessionId, recorder.audioBlob, "project-lesson-recording.webm");
+      const recording = await api.uploadRecording(
+        sessionId, recorder.audioBlob, recordingFilename(recorder.audioBlob, "project-lesson-recording"),
+      );
       const result = await api.submitShadowingAttempt(sessionId, activeExercise.id, {
         recordingId: recording.recording_id,
       });
       setFeedback(result);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "跟读提交失败，请检查录音并重试。");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitRolePlay = async () => {
+    if (!activeExercise || !sessionId || !recorder.audioBlob || activeMode !== "role_play") return;
+    setBusy(true);
+    setError(null);
+    try {
+      const recording = await api.uploadRecording(
+        sessionId, recorder.audioBlob, recordingFilename(recorder.audioBlob, "project-role-play"),
+      );
+      const turn = await api.submitRolePlayTurn(sessionId, activeExercise.id, recording.recording_id);
+      setRolePlayTurns((current) => [...current, turn]);
+      recorder.clear();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "角色扮演提交失败；录音仍可重试。");
     } finally {
       setBusy(false);
     }
@@ -201,7 +245,21 @@ export const ProjectLessonPanel = ({
           {activeMode === "role_play" ? <div>
             <p>角色台词：{activeExercise?.expected_text}</p>
             <p>场景证据：{String(activeExercise?.metadata.source_scene_id ?? "未记录")}；对话对象：{String(activeExercise?.metadata.listener ?? "未记录")}</p>
-            <p>角色扮演当前提供参考音和台词预览，尚不保存语音回应。</p>
+            {recorder.status === "recording"
+              ? <Button onClick={recorder.stop}>结束录音</Button>
+              : <Button onClick={() => void recorder.start()} disabled={busy}>录制角色回应</Button>}
+            {recorder.audioUrl ? <div><p>原录音 B（未染色）</p><audio controls src={recorder.audioUrl} /></div> : null}
+            <Button tone="primary" busy={busy} disabled={!recorder.audioBlob || busy} onClick={() => void submitRolePlay()}>
+              提交原声并获取教师回应
+            </Button>
+            {recorder.error ? <p role="alert">{recorder.error}</p> : null}
+            <p>该练习已保存 {exerciseRolePlayTurns.length} 轮。回复与纠错来自配置的教师或 Mock 后备，不代表客观口语准确率。</p>
+            {exerciseRolePlayTurns.map((turn) => <div key={turn.id}>
+              <p>第 {turn.sequence} 轮：{turn.transcript.text}（转写置信度 {turn.transcript.confidence.toFixed(2)}）</p>
+              <p>教师：{turn.teacher.reply_text}</p>
+              {turn.teacher.feedback.length ? <p>建议：{turn.teacher.feedback.join("；")}</p> : null}
+              {turn.demonstration.audio_url ? <audio controls src={api.assetUrl(turn.demonstration.audio_url)} /> : null}
+            </div>)}
           </div> : null}
           {activeMode === "shadowing" ? <div>
             <p>跟读台词：{activeExercise?.expected_text}</p>

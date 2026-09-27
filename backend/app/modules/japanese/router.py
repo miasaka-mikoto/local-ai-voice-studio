@@ -43,6 +43,12 @@ class ConversationTurnRequest(BaseModel):
     voice_role: str = Field(default="standard_tokyo", pattern="^(standard_tokyo|immersive_character)$")
 
 
+class RolePlayTurnRequest(BaseModel):
+    recording_id: str
+    transcript_hint: str | None = Field(default=None, max_length=5_000)
+    voice_role: str = Field(default="standard_tokyo", pattern="^(standard_tokyo|immersive_character)$")
+
+
 class SentenceRepairRequest(BaseModel):
     learner_id: str
     original: str = Field(min_length=1, max_length=5_000)
@@ -290,6 +296,28 @@ def create_router(service: JapaneseLearningService) -> APIRouter:
     def turn_demonstration(turn_id: str) -> FileResponse:
         try:
             return FileResponse(service.turn_demonstration_path(turn_id), media_type="audio/wav")
+        except JapaneseServiceError as exc:
+            raise _http_error(exc) from exc
+
+    @router.post(
+        "/sessions/{session_id}/role-play/exercises/{exercise_id}/turns",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def role_play_turn(
+        session_id: str, exercise_id: str, payload: RolePlayTurnRequest
+    ) -> dict[str, Any]:
+        try:
+            turn = service.process_turn(
+                session_id=session_id,
+                recording_id=payload.recording_id,
+                transcript_hint=payload.transcript_hint,
+                voice_role=payload.voice_role,
+                exercise_id=exercise_id,
+            ).to_dict()
+            turn["demonstration"]["audio_url"] = (
+                f"/api/japanese/turns/{turn['id']}/demonstration"
+            )
+            return turn
         except JapaneseServiceError as exc:
             raise _http_error(exc) from exc
 
