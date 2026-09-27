@@ -384,6 +384,69 @@ class JapaneseServiceTests(unittest.TestCase):
         self.assertEqual(health["secrets"]["teacher_api_key"], "configured_masked")
         self.assertNotIn("super-secret-value", encoded)
 
+    def test_project_lesson_tts_failure_leaves_no_session_exercises_or_audio(self) -> None:
+        before = self.service.repository.counts()
+        real_tts = MockTTSAdapter()
+        calls = 0
+
+        def fail_second(text: str, output_path: Path, voice_role: str):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"partial reference")
+                raise RuntimeError("synthetic TTS failure")
+            return real_tts.synthesize(text, output_path, voice_role)
+
+        with patch.object(self.service.adapters.tts, "synthesize", side_effect=fail_second):
+            with self.assertRaisesRegex(JapaneseServiceError, "未保存会话或练习"):
+                self.service.create_project_lesson(
+                    self.learner.id, "project-1", "shadowing",
+                    [{"text": "一つ目"}, {"text": "二つ目"}],
+                )
+        self.assertEqual(self.service.repository.counts(), before)
+        lesson_root = self.assets / "japanese" / "sessions"
+        self.assertFalse(any(lesson_root.rglob("*.wav")) if lesson_root.exists() else False)
+        self.assertFalse(any(lesson_root.rglob("project-lesson-references")) if lesson_root.exists() else False)
+
+    def test_project_lesson_database_failure_rolls_back_bundle_and_audio(self) -> None:
+        before = self.service.repository.counts()
+        original_insert = self.service.repository._insert_exercise
+        calls = 0
+
+        def fail_after_second_insert(connection, exercise):
+            nonlocal calls
+            calls += 1
+            original_insert(connection, exercise)
+            if calls == 2:
+                raise RuntimeError("synthetic commit failure")
+
+        with patch.object(self.service.repository, "_insert_exercise", side_effect=fail_after_second_insert):
+            with self.assertRaisesRegex(JapaneseServiceError, "未保存会话或练习"):
+                self.service.create_project_lesson(
+                    self.learner.id, "project-1", "dictation",
+                    [{"text": "一つ目"}, {"text": "二つ目"}],
+                )
+        self.assertEqual(self.service.repository.counts(), before)
+        lesson_root = self.assets / "japanese" / "sessions"
+        self.assertFalse(any(lesson_root.rglob("*.wav")) if lesson_root.exists() else False)
+
+    def test_project_lesson_failure_never_deletes_existing_reference(self) -> None:
+        existing = self._audio("user-reference.wav", "大切な台詞")
+        original_bytes = existing.read_bytes()
+        before = self.service.repository.counts()
+        with patch.object(self.service.adapters.tts, "synthesize", side_effect=RuntimeError("synthetic failure")):
+            with self.assertRaisesRegex(JapaneseServiceError, "未保存会话或练习"):
+                self.service.create_project_lesson(
+                    self.learner.id, "project-1", "shadowing",
+                    [
+                        {"text": "大切な台詞", "reference_audio_path": str(existing)},
+                        {"text": "生成が必要な台詞"},
+                    ],
+                )
+        self.assertEqual(existing.read_bytes(), original_bytes)
+        self.assertEqual(self.service.repository.counts(), before)
+
 
 if __name__ == "__main__":
     unittest.main()

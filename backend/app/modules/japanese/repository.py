@@ -327,26 +327,53 @@ class JapaneseRepository:
     def create_session(self, session: LearningSession) -> LearningSession:
         self.get_profile(session.learner_id)
         with self._connection() as connection:
-            connection.execute(
-                """
-                INSERT INTO jp_sessions (
-                    id, learner_id, mode, coach_mode, scenario, status,
-                    metadata_json, started_at, ended_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    session.id,
-                    session.learner_id,
-                    session.mode.value,
-                    session.coach_mode.value,
-                    session.scenario,
-                    session.status.value,
-                    _dump(session.metadata),
-                    session.started_at,
-                    session.ended_at,
-                ),
-            )
+            self._insert_session(connection, session)
         return session
+
+    @staticmethod
+    def _insert_session(connection: sqlite3.Connection, session: LearningSession) -> None:
+        connection.execute(
+            """
+            INSERT INTO jp_sessions (
+                id, learner_id, mode, coach_mode, scenario, status,
+                metadata_json, started_at, ended_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session.id,
+                session.learner_id,
+                session.mode.value,
+                session.coach_mode.value,
+                session.scenario,
+                session.status.value,
+                _dump(session.metadata),
+                session.started_at,
+                session.ended_at,
+            ),
+        )
+
+    def create_project_lesson_bundle_atomic(
+        self, session: LearningSession, exercises: list[Exercise]
+    ) -> None:
+        """Publish a complete project lesson or leave no session/exercise rows."""
+
+        if not exercises:
+            raise JapaneseRepositoryError("项目课程至少需要一条练习。")
+        if session.mode is not LearningMode.PROJECT_LESSON:
+            raise JapaneseRepositoryError("项目课程会话模式无效。")
+        if any(
+            exercise.learner_id != session.learner_id or exercise.session_id != session.id
+            for exercise in exercises
+        ):
+            raise JapaneseRepositoryError("项目课程练习与会话归属不一致。")
+        with self._immediate_connection() as connection:
+            if connection.execute(
+                "SELECT 1 FROM jp_learner_profiles WHERE id = ?", (session.learner_id,)
+            ).fetchone() is None:
+                raise JapaneseRepositoryError("学习者不存在。")
+            self._insert_session(connection, session)
+            for exercise in exercises:
+                self._insert_exercise(connection, exercise)
 
     def get_session(self, session_id: str) -> LearningSession:
         with self._connection() as connection:

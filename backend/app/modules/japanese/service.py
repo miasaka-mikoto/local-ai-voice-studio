@@ -623,11 +623,11 @@ class JapaneseLearningService:
                 }
             )
 
-        session = self.start_session(
+        session = LearningSession(
             learner_id=learner_id,
             mode=LearningMode.PROJECT_LESSON,
             coach_mode=coaching,
-            scenario=scenario,
+            scenario=scenario.strip() or "项目场景学习",
             metadata={
                 "source_project_id": source_project_id,
                 "lesson_mode": mode.value,
@@ -640,52 +640,74 @@ class JapaneseLearningService:
             ProjectLessonMode.SHADOWING: "A/B 听参考音与原声，按证据立即重说。",
             ProjectLessonMode.ROLE_PLAY: "根据 speaker/listener/context 进入角色并回应。",
         }
-        exercises: list[dict[str, Any]] = []
-        for index, line in enumerate(prepared):
-            exercise = Exercise(
-                learner_id=learner_id,
-                session_id=session.id,
-                exercise_type=exercise_type,
-                prompt=prompt_by_mode[mode],
-                expected_text=line["text"],
-                reference_audio_path=line["reference_audio_path"],
-                metadata={
-                    "source_project_id": source_project_id,
-                    "source_scene_id": line.get("scene_id"),
-                    "source_line_id": line.get("line_id"),
-                    "speaker": line.get("speaker"),
-                    "listener": line.get("listener"),
-                    "context": line.get("context"),
-                    "translation": line.get("translation"),
-                    "locale": line.get("locale", "ja-JP"),
-                    "ordinal": index,
-                    "derivation": "structured_project_line",
-                },
-            )
-            if not exercise.reference_audio_path:
-                reference_path = (
-                    self.asset_root
-                    / "japanese"
-                    / "sessions"
-                    / session.id
-                    / "project-lesson-references"
-                    / f"{exercise.id}.wav"
+        exercises: list[Exercise] = []
+        generated_paths: list[Path] = []
+        committed = False
+        try:
+            for index, line in enumerate(prepared):
+                exercise = Exercise(
+                    learner_id=learner_id,
+                    session_id=session.id,
+                    exercise_type=exercise_type,
+                    prompt=prompt_by_mode[mode],
+                    expected_text=line["text"],
+                    reference_audio_path=line["reference_audio_path"],
+                    metadata={
+                        "source_project_id": source_project_id,
+                        "source_scene_id": line.get("scene_id"),
+                        "source_line_id": line.get("line_id"),
+                        "speaker": line.get("speaker"),
+                        "listener": line.get("listener"),
+                        "context": line.get("context"),
+                        "translation": line.get("translation"),
+                        "locale": line.get("locale", "ja-JP"),
+                        "ordinal": index,
+                        "derivation": "structured_project_line",
+                    },
                 )
-                synthesis = self.adapters.tts.synthesize(
-                    exercise.expected_text, reference_path, reference_voice_role
-                )
-                exercise.reference_audio_path = synthesis.audio_path
-                exercise.metadata["reference_generated_by"] = synthesis.provider
-                exercise.metadata["reference_voice_role"] = synthesis.voice_role
-            saved = self.repository.create_exercise(exercise)
-            item = saved.to_dict()
-            item["reference_audio_url"] = f"/api/japanese/exercises/{saved.id}/reference"
-            exercises.append(item)
+                if not exercise.reference_audio_path:
+                    reference_path = (
+                        self.asset_root
+                        / "japanese"
+                        / "sessions"
+                        / session.id
+                        / "project-lesson-references"
+                        / f"{exercise.id}.wav"
+                    )
+                    generated_paths.append(reference_path)
+                    synthesis = self.adapters.tts.synthesize(
+                        exercise.expected_text, reference_path, reference_voice_role
+                    )
+                    if self._asset_path(synthesis.audio_path) != reference_path.resolve():
+                        raise JapaneseServiceError("参考音生成器返回了非预期的资产路径。")
+                    exercise.reference_audio_path = str(reference_path)
+                    exercise.metadata["reference_generated_by"] = synthesis.provider
+                    exercise.metadata["reference_voice_role"] = synthesis.voice_role
+                exercises.append(exercise)
+            self.repository.create_project_lesson_bundle_atomic(session, exercises)
+            committed = True
+        except Exception as exc:
+            if isinstance(exc, JapaneseServiceError):
+                raise
+            raise JapaneseServiceError("项目课程创建失败，未保存会话或练习；请检查参考音服务后重试。") from exc
+        finally:
+            if not committed:
+                for path in reversed(generated_paths):
+                    self._cleanup_uncommitted_audio(path)
+                try:
+                    (self.asset_root / "japanese" / "sessions" / session.id).rmdir()
+                except OSError:
+                    pass
+        items = []
+        for exercise in exercises:
+            item = exercise.to_dict()
+            item["reference_audio_url"] = f"/api/japanese/exercises/{exercise.id}/reference"
+            items.append(item)
         return {
             "session": session.to_dict(),
             "source_project_id": source_project_id,
             "lesson_mode": mode.value,
-            "exercises": exercises,
+            "exercises": items,
             "policy": "structured_derivation_with_source_evidence",
         }
 
