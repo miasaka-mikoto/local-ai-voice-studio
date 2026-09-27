@@ -50,6 +50,18 @@ def write_silence(path: Path, seconds: float = 1.0) -> None:
 
 
 class JapaneseScoringTests(unittest.TestCase):
+    def test_activity_only_inspection_skips_f0_without_changing_energy_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "short.wav"
+            write_contour(path, [190, 220])
+            full = extract_wave_features(path)
+            quick = extract_wave_features(path, include_pitch=False)
+            self.assertGreater(full.pitch_frame_count, 0)
+            self.assertEqual(quick.f0_hz, [])
+            self.assertEqual(quick.pitch_frame_count, 0)
+            self.assertEqual(quick.rms, full.rms)
+            self.assertEqual(quick.active_ratio, full.active_ratio)
+
     def test_content_exposes_edits_and_asr_confidence(self) -> None:
         result = analyze_content("日本語を勉強します。", "日本語勉強します", 0.8)
         self.assertLess(result.value or 1.0, 1.0)

@@ -88,6 +88,31 @@ class JapaneseServiceTests(unittest.TestCase):
         self.assertEqual(self.service.list_sessions(self.learner.id)[0].id, self.session.id)
         self.assertEqual(self.service.repository.counts()["reviews"], 1)
 
+    def test_silent_conversation_upload_cannot_create_a_turn_or_teacher_demo(self) -> None:
+        silence = self.assets / "fixtures" / "silent-conversation.wav"
+        silence.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(silence), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(3)
+            wav.setframerate(48_000)
+            wav.writeframes(b"\x00\x00\x00" * 48_000)
+        recording = self.service.store_recording(
+            self.session.id, "silent-conversation.wav", silence.read_bytes(), "audio/wav"
+        )
+        before = self.service.repository.counts()
+        with (
+            patch.object(self.service.adapters.asr, "transcribe", side_effect=AssertionError("ASR called")),
+            patch.object(self.service.adapters.teacher, "teach", side_effect=AssertionError("teacher called")),
+            patch.object(self.service.adapters.tts, "synthesize", side_effect=AssertionError("TTS called")),
+        ):
+            with self.assertRaisesRegex(JapaneseServiceError, "重录"):
+                self.service.process_turn(
+                    self.session.id, recording.id, transcript_hint="おはようございます"
+                )
+        self.assertEqual(self.service.repository.counts(), before)
+        self.assertEqual(self.service.list_turns(self.session.id), [])
+        self.assertFalse((self.assets / "japanese" / "sessions" / self.session.id / "turns").exists())
+
     def test_raw_pcm_wav_recording_is_stored_inside_session_assets(self) -> None:
         source = self._audio("upload-source.wav")
         stored = self.service.store_recording(self.session.id, "microphone.wav", source.read_bytes())

@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+import wave
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -88,6 +89,47 @@ def json_body(value: dict) -> bytes:
 
 
 class JapaneseHttpFlowTests(unittest.TestCase):
+    def test_silent_conversation_upload_returns_rerecord_error_without_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            service = JapaneseLearningService(
+                JapaneseRepository(root / "studio.sqlite3"),
+                root / "assets",
+                AdapterBundle(MockASRAdapter(), MockTeacherAdapter(), MockTTSAdapter()),
+            )
+            learner = service.create_learner("HTTP 学习者", "N4", [], [])
+            session = service.start_session(learner.id, "conversation", "strict", "车站")
+            application = FastAPI()
+            application.include_router(create_router(service))
+
+            silence = root / "silence.wav"
+            with wave.open(str(silence), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(3)
+                wav.setframerate(48_000)
+                wav.writeframes(b"\x00\x00\x00" * 48_000)
+            status, _, body = asyncio.run(asgi_request(
+                application,
+                "POST",
+                "/api/japanese/recordings",
+                query={"session_id": session.id, "filename": "silence.wav"},
+                body=silence.read_bytes(),
+                content_type="audio/wav",
+            ))
+            self.assertEqual(status, 201)
+            recording_id = json.loads(body)["recording_id"]
+
+            status, _, body = asyncio.run(asgi_request(
+                application,
+                "POST",
+                f"/api/japanese/sessions/{session.id}/turns",
+                body=json_body({"recording_id": recording_id, "transcript_hint": "こんにちは"}),
+                content_type="application/json",
+            ))
+            self.assertEqual(status, 400)
+            self.assertIn("重录", json.loads(body)["detail"])
+            self.assertEqual(service.list_turns(session.id), [])
+
     def test_full_mock_http_learning_and_shadowing_flow(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

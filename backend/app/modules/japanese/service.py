@@ -28,7 +28,7 @@ from .models import (
 )
 from .media import AudioNormalizationError, normalize_browser_audio, resolve_ffmpeg
 from .repository import JapaneseRepository, JapaneseRepositoryError
-from .scoring import ScoringError, analyze_shadowing
+from .scoring import ScoringError, analyze_shadowing, extract_wave_features
 
 
 class JapaneseServiceError(RuntimeError):
@@ -299,6 +299,14 @@ class JapaneseLearningService:
         recording_asset, recording_path = self._verified_original_recording(
             session_id, recording_id
         )
+        try:
+            activity = extract_wave_features(recording_path, include_pitch=False)
+        except ScoringError as exc:
+            raise JapaneseServiceError(str(exc)) from exc
+        if activity.rms < 0.001 or activity.active_ratio < 0.02:
+            raise JapaneseServiceError(
+                "原始录音缺少可检测语音证据，请检查麦克风并重录；转写提示不能代替录音。"
+            )
         transcript = self.adapters.asr.transcribe(recording_path, transcript_hint)
         learner = self.get_learner(session.learner_id)
         teacher = self.adapters.teacher.teach(

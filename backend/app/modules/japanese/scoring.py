@@ -249,7 +249,7 @@ def _f0_contour(samples: np.ndarray, sample_rate: int, energy_threshold: float) 
     return values, frame_count
 
 
-def extract_wave_features(path: str | Path) -> WaveFeatures:
+def extract_wave_features(path: str | Path, *, include_pitch: bool = True) -> WaveFeatures:
     audio_path = Path(path)
     if not audio_path.is_file():
         raise ScoringError(f"WAV 文件不存在：{audio_path}")
@@ -288,7 +288,10 @@ def extract_wave_features(path: str | Path) -> WaveFeatures:
     active = envelope >= threshold
     active_ratio = float(np.mean(active)) if len(active) else 0.0
     pauses = _pause_ranges(active, hop / sample_rate)
-    f0_hz, pitch_frames = _f0_contour(samples, sample_rate, max(1e-4, threshold * 0.65))
+    f0_hz, pitch_frames = (
+        _f0_contour(samples, sample_rate, max(1e-4, threshold * 0.65))
+        if include_pitch else ([], 0)
+    )
     return WaveFeatures(
         sample_rate=sample_rate,
         duration_seconds=duration,
