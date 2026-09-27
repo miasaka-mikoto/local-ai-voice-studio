@@ -1,0 +1,33 @@
+{
+  "name": "local-ai-voice-studio-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run --reporter=verbose",
+    "test:e2e:companion": "powershell -ExecutionPolicy Bypass -File scripts/smoke_companion_e2e.ps1",
+    "test:watch": "vitest",
+    "preview": "vite preview --host 127.0.0.1 --port 4173"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "3.4.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.0",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@types/three": "0.180.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}
