@@ -26,7 +26,7 @@ from .models import (
     new_id,
     utc_now,
 )
-from .media import AudioNormalizationError, normalize_browser_audio, resolve_ffmpeg
+from .media import AudioNormalizationError, normalize_browser_audio, resolve_ffmpeg, validate_reference_audio
 from .repository import JapaneseRepository, JapaneseRepositoryError
 from .scoring import ScoringError, analyze_shadowing, extract_wave_features
 
@@ -100,6 +100,14 @@ class JapaneseLearningService:
             raise JapaneseServiceError("音频路径必须位于 Studio 项目资产目录内。")
         if must_exist and not path.is_file():
             raise JapaneseServiceError(f"音频资产不存在：{path.name}")
+        return path
+
+    def _validated_pcm_audio_path(self, value: str | Path) -> Path:
+        path = self._asset_path(value)
+        try:
+            validate_reference_audio(path)
+        except AudioNormalizationError as exc:
+            raise JapaneseServiceError(str(exc)) from exc
         return path
 
     def create_learner(
@@ -357,6 +365,8 @@ class JapaneseLearningService:
                 demonstration_path,
                 voice_role,
             )
+            if self._validated_pcm_audio_path(demonstration.audio_path) != demonstration_path.resolve():
+                raise JapaneseServiceError("示范音生成器返回了非预期的资产路径。")
             turn = ConversationTurn(
                 id=turn_id,
                 session_id=session_id,
@@ -385,7 +395,7 @@ class JapaneseLearningService:
         path = turn.get("demonstration", {}).get("audio_path")
         if not path:
             raise JapaneseServiceError("该轮次没有可播放的示范音频。")
-        return self._asset_path(path)
+        return self._validated_pcm_audio_path(path)
 
     def repair_sentence(
         self,
@@ -442,13 +452,17 @@ class JapaneseLearningService:
             / "references"
             / f"{exercise.id}.wav"
         )
-        synthesis = self.adapters.tts.synthesize(text, reference_path, voice_role)
-        exercise.reference_audio_path = synthesis.audio_path
         try:
+            synthesis = self.adapters.tts.synthesize(text, reference_path, voice_role)
+            if self._validated_pcm_audio_path(synthesis.audio_path) != reference_path.resolve():
+                raise JapaneseServiceError("跟读参考生成器返回了非预期的资产路径。")
+            exercise.reference_audio_path = str(reference_path)
             self.repository.create_exercise(exercise)
-        except Exception:
-            reference_path.unlink(missing_ok=True)
-            raise
+        except Exception as exc:
+            self._cleanup_uncommitted_audio(reference_path)
+            if isinstance(exc, JapaneseServiceError):
+                raise
+            raise JapaneseServiceError("跟读参考创建失败，请检查本地语音合成服务后重试。") from exc
         return {"exercise": exercise.to_dict(), "synthesis": synthesis.to_dict()}
 
     def exercise_reference_path(self, exercise_id: str) -> Path:
@@ -458,7 +472,7 @@ class JapaneseLearningService:
             raise JapaneseServiceError(str(exc)) from exc
         if not exercise.reference_audio_path:
             raise JapaneseServiceError("该练习没有参考音频。")
-        return self._asset_path(exercise.reference_audio_path)
+        return self._validated_pcm_audio_path(exercise.reference_audio_path)
 
     def analyze_shadowing_attempt(
         self,
@@ -488,7 +502,7 @@ class JapaneseLearningService:
                 raise JapaneseServiceError("练习没有参考音频。")
             reference_audio_path = exercise.reference_audio_path
             expected_text = exercise.expected_text
-        reference = self._asset_path(reference_audio_path)
+        reference = self._validated_pcm_audio_path(reference_audio_path)
         recording_asset, recording_path = self._verified_original_recording(
             session_id, recording_id
         )
@@ -618,7 +632,7 @@ class JapaneseLearningService:
                     **line,
                     "text": text,
                     "reference_audio_path": (
-                        str(self._asset_path(str(reference))) if reference else None
+                        str(self._validated_pcm_audio_path(str(reference))) if reference else None
                     ),
                 }
             )
@@ -678,7 +692,7 @@ class JapaneseLearningService:
                     synthesis = self.adapters.tts.synthesize(
                         exercise.expected_text, reference_path, reference_voice_role
                     )
-                    if self._asset_path(synthesis.audio_path) != reference_path.resolve():
+                    if self._validated_pcm_audio_path(synthesis.audio_path) != reference_path.resolve():
                         raise JapaneseServiceError("参考音生成器返回了非预期的资产路径。")
                     exercise.reference_audio_path = str(reference_path)
                     exercise.metadata["reference_generated_by"] = synthesis.provider

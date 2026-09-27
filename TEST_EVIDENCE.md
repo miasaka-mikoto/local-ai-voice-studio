@@ -4,7 +4,7 @@
 
 | 检查 | 结果 |
 |---|---|
-| `cd backend && python -B -m unittest discover -s tests -v` | 61/61 通过 |
+| `cd backend && python -B -m unittest discover -s tests -v` | 66/66 通过（其中日语模块 45 项） |
 | `python -B -m unittest discover -s adapters\tests -v` | 46/46 通过 |
 | `cd frontend && npm run test` | 43/43 通过，12 个测试文件 |
 | `cd frontend && npm run build` | TypeScript 与 Vite 构建通过 |
@@ -14,3 +14,5 @@
 新增回归覆盖静音会话在 ASR/教师/TTS 前返回重录错误、不写入轮次或示范音；HTTP 上传后用 `recording_id` 提交静音轮次返回 400。仅活动检测模式跳过 F0 提取，原有跟读评分仍计算 F0。
 
 项目课程新增 TTS 第二条失败、数据库第二条练习插入后失败和用户已有参考音保留三项回归；失败后无新 session/exercise，生成的参考 WAV 被清理。
+
+参考音完整性新增 PCM16/PCM24、非 WAV、仅头部截断 WAV、无效 TTS 输出清理、已保存参考音损坏后拒绝媒体读取及评分回归。用户已有参考音不会因创建失败被删除；测试原声上传使用独立合成麦克风波形，不使用 MockTTS 输出冒充原录音。

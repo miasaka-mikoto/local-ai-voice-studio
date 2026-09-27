@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sys
 import tempfile
 import unittest
@@ -60,7 +61,15 @@ class JapaneseServiceTests(unittest.TestCase):
         return path
 
     def _uploaded(self, name: str, text: str = "日本語"):
-        source = self._audio(f"source-{name}", text)
+        source = self.assets / "fixtures" / f"microphone-{name}"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        samples = (int(0.15 * 8_388_607 * math.sin(2 * math.pi * 220 * index / 48_000))
+                   for index in range(9_600))
+        with wave.open(str(source), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(3)
+            wav.setframerate(48_000)
+            wav.writeframes(b"".join(sample.to_bytes(3, "little", signed=True) for sample in samples))
         return self.service.store_recording(
             self.session.id, name, source.read_bytes(), "audio/wav"
         )
@@ -445,6 +454,67 @@ class JapaneseServiceTests(unittest.TestCase):
                     ],
                 )
         self.assertEqual(existing.read_bytes(), original_bytes)
+        self.assertEqual(self.service.repository.counts(), before)
+
+    def test_project_lesson_rejects_invalid_user_reference_without_persistence(self) -> None:
+        before = self.service.repository.counts()
+        for name, content in (("not-wav.wav", b"not audio"), ("truncated.wav", None)):
+            with self.subTest(name=name):
+                reference = self.assets / "fixtures" / name
+                reference.parent.mkdir(parents=True, exist_ok=True)
+                if content is None:
+                    complete = self._audio("complete-reference.wav")
+                    content = complete.read_bytes()[:44]
+                reference.write_bytes(content)
+                with self.assertRaises(JapaneseServiceError):
+                    self.service.create_project_lesson(
+                        self.learner.id, "project-1", "shadowing",
+                        [{"text": "参照音声", "reference_audio_path": str(reference)}],
+                    )
+                self.assertEqual(self.service.repository.counts(), before)
+                self.assertEqual(reference.read_bytes(), content)
+
+    def test_invalid_generated_reference_does_not_persist_or_leave_audio(self) -> None:
+        before = self.service.repository.counts()
+        real_tts = MockTTSAdapter()
+
+        def corrupt_output(text: str, output_path: Path, voice_role: str):
+            synthesis = real_tts.synthesize(text, output_path, voice_role)
+            output_path.write_bytes(b"not audio")
+            return synthesis
+
+        with patch.object(self.service.adapters.tts, "synthesize", side_effect=corrupt_output):
+            with self.assertRaisesRegex(JapaneseServiceError, "PCM WAV"):
+                self.service.create_shadowing_reference(self.session.id, "参照音声")
+            with self.assertRaisesRegex(JapaneseServiceError, "PCM WAV"):
+                self.service.create_project_lesson(
+                    self.learner.id, "project-1", "shadowing", [{"text": "参照音声"}],
+                )
+            recording = self._uploaded("invalid-demo.wav")
+            before_turn = self.service.repository.counts()
+            with self.assertRaisesRegex(JapaneseServiceError, "PCM WAV"):
+                self.service.process_turn(self.session.id, recording.id, "日本語")
+        self.assertEqual(self.service.repository.counts(), before_turn)
+        self.assertEqual(before["exercises"], 0)
+        self.assertEqual(self.service.repository.counts()["sessions"], before["sessions"])
+        self.assertEqual(self.service.repository.counts()["turns"], 0)
+        self.assertFalse(any(self.assets.rglob("demonstration.wav")))
+        self.assertFalse(any(self.assets.rglob("references/*.wav")))
+        self.assertFalse(any(self.assets.rglob("project-lesson-references/*.wav")))
+
+    def test_corrupted_saved_reference_is_not_streamed_or_scored(self) -> None:
+        created = self.service.create_shadowing_reference(self.session.id, "参照音声")
+        exercise_id = created["exercise"]["id"]
+        reference = Path(created["exercise"]["reference_audio_path"])
+        reference.write_bytes(reference.read_bytes()[:44])
+        with self.assertRaisesRegex(JapaneseServiceError, "截断"):
+            self.service.exercise_reference_path(exercise_id)
+        recording = self._uploaded("reference-corrupted.wav")
+        before = self.service.repository.counts()
+        with self.assertRaisesRegex(JapaneseServiceError, "截断"):
+            self.service.analyze_shadowing_exercise_attempt(
+                self.session.id, exercise_id, recording.id, "参照音声"
+            )
         self.assertEqual(self.service.repository.counts(), before)
 
 

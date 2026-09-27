@@ -17,6 +17,7 @@ from app.modules.japanese.media import (  # noqa: E402
     AudioNormalizationError,
     normalize_browser_audio,
     resolve_ffmpeg,
+    validate_reference_audio,
 )
 
 
@@ -88,6 +89,39 @@ class JapaneseMediaTests(unittest.TestCase):
             with self.assertRaisesRegex(AudioNormalizationError, "截断"):
                 normalize_browser_audio(header_only, "audio/wav", output)
             self.assertFalse(output.exists())
+
+    def test_reference_audio_accepts_complete_pcm16_and_pcm24(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for sample_width in (2, 3):
+                with self.subTest(sample_width=sample_width):
+                    source = Path(directory) / f"pcm{sample_width * 8}.wav"
+                    with wave.open(str(source), "wb") as wav:
+                        wav.setnchannels(1)
+                        wav.setsampwidth(sample_width)
+                        wav.setframerate(48_000)
+                        wav.writeframes(b"\x01" * (sample_width * 480))
+                    self.assertEqual(
+                        validate_reference_audio(source), (1, sample_width, 48_000, 480)
+                    )
+
+    def test_reference_audio_rejects_non_wav_and_declared_but_missing_frames(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            invalid = root / "not-a-wave.wav"
+            invalid.write_bytes(b"not a PCM WAV")
+            with self.assertRaisesRegex(AudioNormalizationError, "PCM WAV"):
+                validate_reference_audio(invalid)
+
+            complete = root / "complete.wav"
+            with wave.open(str(complete), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(3)
+                wav.setframerate(48_000)
+                wav.writeframes(b"\x01\x00\x00" * 480)
+            truncated = root / "truncated.wav"
+            truncated.write_bytes(complete.read_bytes()[:44])
+            with self.assertRaisesRegex(AudioNormalizationError, "截断"):
+                validate_reference_audio(truncated)
 
 
 if __name__ == "__main__":

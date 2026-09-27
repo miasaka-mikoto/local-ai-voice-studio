@@ -87,6 +87,40 @@ def _validate_pcm_wav(path: Path) -> None:
         raise AudioNormalizationError("单次口语录音不能超过 5 分钟。")
 
 
+def validate_reference_audio(path: str | Path) -> tuple[int, int, int, int]:
+    """Validate a playable PCM WAV reference without buffering the full file."""
+
+    source = Path(path)
+    try:
+        if source.stat().st_size > 100 * 1024 * 1024:
+            raise AudioNormalizationError("参考音频不能超过 100 MB。")
+        with wave.open(str(source), "rb") as wav:
+            if wav.getcomptype() != "NONE":
+                raise AudioNormalizationError("参考音频必须是未压缩 PCM WAV。")
+            channels = wav.getnchannels()
+            sample_width = wav.getsampwidth()
+            sample_rate = wav.getframerate()
+            frame_count = wav.getnframes()
+            if channels not in (1, 2) or sample_width not in (1, 2, 3, 4):
+                raise AudioNormalizationError("参考音频声道数或采样位深不受支持。")
+            if not 8_000 <= sample_rate <= 192_000 or not 0 < frame_count <= sample_rate * 300:
+                raise AudioNormalizationError("参考音频采样率或时长不受支持。")
+            frame_bytes = channels * sample_width
+            expected_bytes = frame_count * frame_bytes
+            actual_bytes = 0
+            while actual_bytes < expected_bytes:
+                remaining_frames = (expected_bytes - actual_bytes + frame_bytes - 1) // frame_bytes
+                chunk = wav.readframes(min(4096, remaining_frames))
+                if not chunk:
+                    break
+                actual_bytes += len(chunk)
+            if actual_bytes != expected_bytes:
+                raise AudioNormalizationError("参考音频 PCM 数据截断，请重新生成或选择完整文件。")
+            return channels, sample_width, sample_rate, frame_count
+    except (OSError, wave.Error, EOFError) as exc:
+        raise AudioNormalizationError("参考音频不是可读取的 PCM WAV。") from exc
+
+
 def normalize_browser_audio(
     content: bytes,
     content_type: str,
