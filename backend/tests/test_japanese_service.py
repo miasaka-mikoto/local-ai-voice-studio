@@ -474,6 +474,27 @@ class JapaneseServiceTests(unittest.TestCase):
                 self.assertEqual(self.service.repository.counts(), before)
                 self.assertEqual(reference.read_bytes(), content)
 
+    def test_project_lesson_exercises_are_listed_in_order_after_reopen(self) -> None:
+        lesson = self.service.create_project_lesson(
+            self.learner.id, "project-reopen", "shadowing",
+            [
+                {"line_id": "line-1", "scene_id": "scene-a", "text": "一つ目"},
+                {"line_id": "line-2", "scene_id": "scene-a", "text": "二つ目"},
+            ],
+        )
+        session_id = lesson["session"]["id"]
+        reopened = JapaneseLearningService(
+            JapaneseRepository(Path(self.temporary.name) / "studio.sqlite3"),
+            self.assets,
+            AdapterBundle(MockASRAdapter(), MockTeacherAdapter(), MockTTSAdapter()),
+        )
+        exercises = reopened.list_session_exercises(session_id)
+        self.assertEqual([item.metadata["source_line_id"] for item in exercises], ["line-1", "line-2"])
+        self.assertEqual([item.id for item in exercises], [item["id"] for item in lesson["exercises"]])
+        self.assertTrue(all(item.reference_audio_path for item in exercises))
+        with self.assertRaisesRegex(JapaneseServiceError, "会话不存在"):
+            reopened.list_session_exercises("session-missing")
+
     def test_invalid_generated_reference_does_not_persist_or_leave_audio(self) -> None:
         before = self.service.repository.counts()
         real_tts = MockTTSAdapter()

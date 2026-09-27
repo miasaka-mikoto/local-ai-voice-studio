@@ -216,6 +216,23 @@ def create_router(service: JapaneseLearningService) -> APIRouter:
         except JapaneseServiceError as exc:
             raise _http_error(exc) from exc
 
+    @router.get("/sessions/{session_id}/exercises")
+    def list_session_exercises(session_id: str) -> list[dict[str, Any]]:
+        try:
+            exercises = service.list_session_exercises(session_id)
+            return [
+                {
+                    **exercise.to_dict(),
+                    "reference_audio_url": (
+                        f"/api/japanese/exercises/{exercise.id}/reference"
+                        if exercise.reference_audio_path else None
+                    ),
+                }
+                for exercise in exercises
+            ]
+        except JapaneseServiceError as exc:
+            raise _http_error(exc) from exc
+
     @router.post("/recordings", status_code=status.HTTP_201_CREATED)
     async def upload_recording(
         request: Request,

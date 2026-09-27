@@ -27,4 +27,14 @@ describe("application smoke", () => {
     expect(screen.getByText("模型执行由用户配置")).toBeInTheDocument();
     expect(screen.queryByText("当前禁止真实模型加载")).not.toBeInTheDocument();
   });
+
+  it("shows the project lesson handoff without pretending Mock mode saves a course", async () => {
+    render(<StudioProvider><App /></StudioProvider>);
+    await screen.findByRole("heading", { name: "今天要推进哪个项目？" }, { timeout: 5000 });
+    screen.getByRole("button", { name: /雨夜电车 · 第 01 话/ }).click();
+    (await screen.findByRole("tab", { name: "日语课程" })).click();
+    expect(await screen.findByRole("heading", { name: "项目台词转日语课程" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建并保存课程" })).toBeDisabled();
+    expect(screen.getByText(/当前是浏览器 Mock/)).toBeInTheDocument();
+  });
 });

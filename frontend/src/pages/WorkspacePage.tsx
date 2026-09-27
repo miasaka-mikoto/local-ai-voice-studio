@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useStudio } from "../StudioContext";
 import { Icon } from "../components/Icon";
 import { Badge, Button, EmptyState, Field, PageHeader, Panel, Segmented } from "../components/ui";
+import { ProjectLessonPanel } from "../components/ProjectLessonPanel";
 import { playAudioOrSpeech } from "../lib/audio";
 import { calculateDeliveryReadiness } from "../lib/deliveryReadiness";
 import { exportProjectLines, downloadTextFile, parseDialogueFile } from "../lib/importers";
@@ -9,14 +10,15 @@ import { formatClock, formatDuration, jobStatusLabel, jobStatusTone, projectKind
 import { navigate } from "../lib/navigation";
 import type { DialogueLine, DialogueLinePatch, ImportPreview } from "../types";
 
-type WorkspaceTab = "overview" | "lines" | "casting" | "takes" | "io";
+type WorkspaceTab = "overview" | "lines" | "casting" | "takes" | "io" | "lesson";
 
-const workspaceTabs: { value: WorkspaceTab; label: string; icon: "grid" | "edit" | "users" | "headphones" | "upload" }[] = [
+const workspaceTabs: { value: WorkspaceTab; label: string; icon: "grid" | "edit" | "users" | "headphones" | "upload" | "file" }[] = [
   { value: "overview", label: "概览", icon: "grid" },
   { value: "lines", label: "台词编辑", icon: "edit" },
   { value: "casting", label: "角色映射", icon: "users" },
   { value: "takes", label: "候选 Take", icon: "headphones" },
   { value: "io", label: "导入 / 导出", icon: "upload" },
+  { value: "lesson", label: "日语课程", icon: "file" },
 ];
 
 const editablePatch = (line: DialogueLine): DialogueLinePatch => ({
@@ -238,7 +240,7 @@ export const WorkspacePage = ({ projectId }: { projectId: string }) => {
       <div className="workspace-tabs" role="tablist" aria-label="项目工作区">
         {workspaceTabs.map((item) => <button type="button" role="tab" aria-selected={tab === item.value} className={tab === item.value ? "is-active" : ""} key={item.value} onClick={() => setTab(item.value)}><Icon name={item.icon} /><span>{item.label}</span>{item.value === "lines" && lines.length ? <em>{lines.length}</em> : item.value === "takes" && withoutSelection ? <em>{withoutSelection}</em> : null}</button>)}
       </div>
-      {tab === "overview" ? overview : tab === "lines" ? lineEditor : tab === "casting" ? casting : tab === "takes" ? takes : io}
+      {tab === "overview" ? overview : tab === "lines" ? lineEditor : tab === "casting" ? casting : tab === "takes" ? takes : tab === "io" ? io : <ProjectLessonPanel project={project} lines={lines} characters={characters} />}
     </>
   );
 };

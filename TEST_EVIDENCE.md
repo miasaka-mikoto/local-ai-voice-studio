@@ -4,9 +4,9 @@
 
 | 检查 | 结果 |
 |---|---|
-| `cd backend && python -B -m unittest discover -s tests -v` | 66/66 通过（其中日语模块 45 项） |
+| `cd backend && python -B -m unittest discover -s tests -v` | 68/68 通过 |
 | `python -B -m unittest discover -s adapters\tests -v` | 46/46 通过 |
-| `cd frontend && npm run test` | 44/44 通过，12 个测试文件 |
+| `cd frontend && npm run test` | 46/46 通过 |
 | `cd frontend && npm run build` | TypeScript 与 Vite 构建通过 |
 
 测试使用临时数据库、合成音频和 Mock 组件，不启动或下载大型模型。构建有一个 Vite 大 chunk 提示（懒加载 Three.js），不是失败。浏览器端真实麦克风、外部模型和商业许可没有在此记录中宣称验收。
@@ -17,8 +17,12 @@
 
 参考音完整性新增 PCM16/PCM24、非 WAV、仅头部截断 WAV、无效 TTS 输出清理、已保存参考音损坏后拒绝媒体读取及评分回归。用户已有参考音不会因创建失败被删除；测试原声上传使用独立合成麦克风波形，不使用 MockTTS 输出冒充原录音。
 
+项目课程新增 `GET /api/japanese/sessions/{session_id}/exercises`，后端回归覆盖建课、重开读取练习、受控参考音，以及使用独立上传原录音的跟读尝试。前端回归覆盖项目课程创建、刷新恢复、`recording_id` 上传/提交契约和界面状态。听写输入目前仅供自查，角色扮演仅预览；两者尚不保存或评分回应，不能视为完整学习模式验收。
+
 ## 本机启动烟雾检查
 
 使用独立临时数据目录，后端以 `python -B -m app.main --host 127.0.0.1 --port 18767 --no-worker` 启动；`/api/v1/health`、`/api/v1/bootstrap`、`/api/japanese/health` 和 `/docs` 均返回 HTTP 200，健康响应确认 `bind=127.0.0.1`、`worker=false`。前端 `npm run dev` 在 `127.0.0.1:5173` 启动，根页面返回 HTTP 200。检查后仅关闭这次启动的后端与前端进程。此项验证证明服务可启动和提供端点，不等同于真实模型或完整浏览器交互验收。
 
 随后按 README 默认端口在另一独立临时数据库启动后端 `127.0.0.1:8766` 和前端 `127.0.0.1:5173`。真实浏览器显示“API 已连接”，通过 UI 创建日语项目，刷新后仍能显示该项目；浏览器控制台无错误。仅操作临时数据与 Mock，不连接模型，也不操作 7860。浏览器检查同时发现旧页面把外部 7860 状态和开发期模型限制写成固定事实，现已改为“不自动启动或停止、是否在线以实际连接为准”的产品说明，并新增前端回归。该检查尚未覆盖真实麦克风录音、全部项目导出或大型模型。
+
+本轮另以临时 SQLite、Mock 和默认回环端口完成真实浏览器流程：新建游戏语音项目、导入两条日语台词、创建两条影子跟读练习、刷新后找回同一课程和练习；控制台零错误。原始浏览器快照与合成台词清单保存在发布仓库外的 `context-vault/evidence/`，不随源码公开。此流程未操作真实麦克风，也不证明 ASR/TTS 实际质量。

@@ -1,7 +1,8 @@
 import type { ConversationTurn, ShadowFeedback } from "../types";
 
 export type ApiCoachMode = "fluent" | "strict";
-export type ApiLearningMode = "conversation" | "shadowing" | "pronunciation_clinic" | "sentence_repair";
+export type ApiLearningMode = "conversation" | "shadowing" | "pronunciation_clinic" | "sentence_repair" | "project_lesson";
+export type ProjectLessonMode = "dictation" | "shadowing" | "role_play";
 
 export interface JapaneseLearnerResponse {
   id: string;
@@ -23,6 +24,35 @@ export interface JapaneseSessionResponse {
   metadata: Record<string, unknown>;
   started_at: string;
   ended_at: string | null;
+}
+
+export interface JapaneseExerciseResponse {
+  id: string;
+  learner_id: string;
+  session_id: string | null;
+  exercise_type: ProjectLessonMode | "pronunciation" | "sentence_repair";
+  expected_text: string;
+  reference_audio_path: string | null;
+  reference_audio_url: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ProjectLessonLineInput {
+  line_id?: string;
+  scene_id?: string;
+  text: string;
+  speaker?: string;
+  listener?: string;
+  context?: string;
+  locale?: string;
+}
+
+export interface ProjectLessonResponse {
+  session: JapaneseSessionResponse;
+  source_project_id: string;
+  lesson_mode: ProjectLessonMode;
+  exercises: JapaneseExerciseResponse[];
+  policy: string;
 }
 
 export type CurriculumScenarioStatus = "completed" | "in_progress" | "available" | "locked";
@@ -298,6 +328,40 @@ export class JapaneseLearningApi {
     });
   }
 
+  getLearner(learnerId: string) {
+    return this.json<JapaneseLearnerResponse>(`/api/japanese/learners/${encodeURIComponent(learnerId)}`);
+  }
+
+  listSessions(learnerId: string) {
+    return this.json<JapaneseSessionResponse[]>(`/api/japanese/learners/${encodeURIComponent(learnerId)}/sessions`);
+  }
+
+  listSessionExercises(sessionId: string) {
+    return this.json<JapaneseExerciseResponse[]>(`/api/japanese/sessions/${encodeURIComponent(sessionId)}/exercises`);
+  }
+
+  createProjectLesson(learnerId: string, input: {
+    sourceProjectId: string;
+    lessonMode: ProjectLessonMode;
+    scenario: string;
+    lines: ProjectLessonLineInput[];
+  }) {
+    return this.json<ProjectLessonResponse>(
+      `/api/japanese/learners/${encodeURIComponent(learnerId)}/project-lessons`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          source_project_id: input.sourceProjectId,
+          lesson_mode: input.lessonMode,
+          scenario: input.scenario,
+          coach_mode: "strict",
+          reference_voice_role: "standard_tokyo",
+          lines: input.lines,
+        }),
+      },
+    );
+  }
+
   createSession(input: {
     learnerId: string;
     mode: ApiLearningMode;
@@ -411,6 +475,28 @@ const storageKey = (baseUrl: string, kind: "learner" | "conversation" | "shadowi
 
 export const readStoredJapaneseLearner = (baseUrl: string) =>
   localStorage.getItem(storageKey(baseUrl, "learner"));
+
+export const ensureJapaneseLearner = async (api: JapaneseLearningApi): Promise<string> => {
+  const learnerKey = storageKey(api.baseUrl, "learner");
+  const stored = localStorage.getItem(learnerKey);
+  if (stored) {
+    try {
+      await api.getLearner(stored);
+      return stored;
+    } catch (error) {
+      if (!(error instanceof JapaneseApiError) || error.status !== 400) throw error;
+      localStorage.removeItem(learnerKey);
+    }
+  }
+  const learner = await api.createLearner({
+    displayName: "本机学习者",
+    level: "N4",
+    goals: ["自然会话", "mora 节奏", "音高重音"],
+    interests: ["旅行", "动漫", "游戏"],
+  });
+  localStorage.setItem(learnerKey, learner.id);
+  return learner.id;
+};
 
 export const readStoredJapaneseSession = (baseUrl: string, mode: "conversation" | "shadowing", scope?: string) =>
   localStorage.getItem(storageKey(baseUrl, mode, scope));

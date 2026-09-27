@@ -207,6 +207,10 @@ class JapaneseLearningService:
         self.get_session(session_id)
         return self.repository.list_turn_rows(session_id)
 
+    def list_session_exercises(self, session_id: str) -> list[Exercise]:
+        self.get_session(session_id)
+        return self.repository.list_session_exercises(session_id)
+
     def complete_session(self, session_id: str) -> LearningSession:
         session = self.get_session(session_id)
         curriculum_scenario_id = str(session.metadata.get("curriculum_scenario_id", "")).strip()

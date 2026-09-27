@@ -598,6 +598,18 @@ class JapaneseRepository:
             ).fetchone()
         if row is None:
             raise JapaneseRepositoryError(f"练习不存在：{exercise_id}")
+        return self._exercise_from_row(row)
+
+    def list_session_exercises(self, session_id: str) -> list[Exercise]:
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT * FROM jp_exercises WHERE session_id = ? ORDER BY rowid",
+                (session_id,),
+            ).fetchall()
+        return [self._exercise_from_row(row) for row in rows]
+
+    @staticmethod
+    def _exercise_from_row(row: sqlite3.Row) -> Exercise:
         return Exercise(
             id=row["id"],
             learner_id=row["learner_id"],

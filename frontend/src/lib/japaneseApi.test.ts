@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { JapaneseLearningApi, apiShadowingToUi, apiTurnToUiTurns, ensureJapaneseSession, type JapaneseTurnResponse, type ShadowingApiResponse } from "./japaneseApi";
+import { JapaneseLearningApi, apiShadowingToUi, apiTurnToUiTurns, ensureJapaneseLearner, ensureJapaneseSession, type JapaneseTurnResponse, type ShadowingApiResponse } from "./japaneseApi";
 
 const ok = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
 
@@ -207,5 +207,37 @@ describe("JapaneseLearningApi contract", () => {
       "http://127.0.0.1:8766/api/japanese/sessions/session%2Fid/complete",
     ]);
     expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: "POST" });
+  });
+
+  it("creates a traceable project lesson and reloads its persisted exercises", async () => {
+    const fetchMock = vi.fn()
+      .mockImplementationOnce(() => ok({ id: "learner-1" }, 201))
+      .mockImplementationOnce(() => ok({ session: { id: "session-1" }, exercises: [{ id: "exercise-1" }] }, 201))
+      .mockImplementationOnce(() => ok([{ id: "session-1", mode: "project_lesson" }]))
+      .mockImplementationOnce(() => ok([{ id: "exercise-1", reference_audio_url: "/api/japanese/exercises/exercise-1/reference" }]));
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new JapaneseLearningApi("http://127.0.0.1:8766");
+    const learnerId = await ensureJapaneseLearner(api);
+    await api.createProjectLesson(learnerId, {
+      sourceProjectId: "project/1",
+      lessonMode: "shadowing",
+      scenario: "第一幕",
+      lines: [{ line_id: "line-1", scene_id: "scene-1", text: "新宿までお願いします", locale: "ja-JP" }],
+    });
+    await api.listSessions(learnerId);
+    await api.listSessionExercises("session/1");
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "http://127.0.0.1:8766/api/japanese/learners",
+      "http://127.0.0.1:8766/api/japanese/learners/learner-1/project-lessons",
+      "http://127.0.0.1:8766/api/japanese/learners/learner-1/sessions",
+      "http://127.0.0.1:8766/api/japanese/sessions/session%2F1/exercises",
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject({
+      source_project_id: "project/1",
+      lesson_mode: "shadowing",
+      reference_voice_role: "standard_tokyo",
+      lines: [{ line_id: "line-1", scene_id: "scene-1", text: "新宿までお願いします" }],
+    });
   });
 });
