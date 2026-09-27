@@ -109,12 +109,12 @@ export const ProjectsPage = () => {
           )) : <EmptyState icon="check" title="队列空闲" description="创建生成或导出任务后会在这里显示。" />}
         </Panel>
         <Panel className="safety-panel">
-          <div className="panel-heading"><div><h2>本机安全边界</h2><p>当前开发会话只运行轻量前端验证。</p></div><span className="safety-panel__shield"><Icon name="lock" /></span></div>
+          <div className="panel-heading"><div><h2>本机安全边界</h2><p>以下是工作台的设计边界，不代表其他服务当前在线。</p></div><span className="safety-panel__shield"><Icon name="lock" /></span></div>
           <ul className="check-list">
-            <li><Icon name="check" /><span><strong>7860 保持运行</strong><small>模型实验台未被修改或停止</small></span></li>
-            <li><Icon name="check" /><span><strong>API 默认 8766</strong><small>避开已被其他本机服务占用的 8765</small></span></li>
-            <li><Icon name="check" /><span><strong>GPU 模型禁用</strong><small>mock 明确标识，不伪造真实生成</small></span></li>
-            <li><Icon name="check" /><span><strong>所有服务只绑定本机</strong><small>127.0.0.1，不创建公网分享</small></span></li>
+            <li><Icon name="check" /><span><strong>7860 模型实验台独立</strong><small>工作台不会启动或停止它；是否在线以实际连接为准</small></span></li>
+            <li><Icon name="check" /><span><strong>API 默认 8766</strong><small>本机回环端口可在系统页配置，不改动其他服务</small></span></li>
+            <li><Icon name="check" /><span><strong>重型模型按需配置</strong><small>默认 Mock，不自动加载或下载权重</small></span></li>
+            <li><Icon name="check" /><span><strong>工作台仅限本机</strong><small>前端与 API 默认绑定 127.0.0.1，不创建公网分享</small></span></li>
           </ul>
         </Panel>
       </div>

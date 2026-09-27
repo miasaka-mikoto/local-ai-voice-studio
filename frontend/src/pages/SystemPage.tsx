@@ -30,11 +30,11 @@ export const SystemPage = () => {
       <PageHeader
         eyebrow="Local runtime"
         title="系统、模型与诊断"
-        description="这里仅显示部署和运行状态。任何模型启动都必须由用户在 7860 实验台显式执行。"
+        description="这里展示资源与引擎登记；本页不会自动启动或停止模型，7860 是可选的独立入口。"
         actions={<a className="button button--default button--md" href="http://127.0.0.1:7860" target="_blank" rel="noreferrer"><Icon name="external" size={17} /><span>打开模型实验台</span></a>}
       />
 
-      <div className="system-alert system-alert--danger"><Icon name="alert" /><div><strong>当前禁止真实模型加载</strong><span>{connectionMode === "mock" ? "以下资源数字是 Mock 种子快照，不代表机器实时遥测。" : `API 报告 GPU 已使用约 ${snapshot?.system.gpuUsedMb ?? "—"} / ${snapshot?.system.gpuTotalMb ?? "—"} MiB，系统可用内存约 ${snapshot?.system.ramAvailableGb ?? "—"} GB。`} 本前端只执行 Mock 与轻量验证。</span></div></div>
+      <div className="system-alert system-alert--danger"><Icon name="alert" /><div><strong>模型执行由用户配置</strong><span>{connectionMode === "mock" ? "当前是浏览器 Mock；资源数字为示例快照，不代表机器实时遥测。" : `API 报告 GPU 已使用约 ${snapshot?.system.gpuUsedMb ?? "—"} / ${snapshot?.system.gpuTotalMb ?? "—"} MiB，系统可用内存约 ${snapshot?.system.ramAvailableGb ?? "—"} GB。`} 本页不会触发模型加载；真实引擎需单独配置并核验授权。</span></div></div>
 
       <div className="system-grid">
         <Panel className="runtime-card">
@@ -45,7 +45,7 @@ export const SystemPage = () => {
         </Panel>
 
         <Panel className="connection-card">
-          <div className="panel-heading"><div><h2>工作台 API</h2><p>8765 已被其他本机服务占用，Voice Studio 默认使用 8766。</p></div><Badge tone={connectionMode === "api" ? "success" : "warning"} dot>{connectionMode === "api" ? "真实 API" : "本地 MOCK"}</Badge></div>
+          <div className="panel-heading"><div><h2>工作台 API</h2><p>默认连接本机 127.0.0.1:8766；端口与数据模式可在下方调整。</p></div><Badge tone={connectionMode === "api" ? "success" : "warning"} dot>{connectionMode === "api" ? "真实 API" : "本地 MOCK"}</Badge></div>
           <div className="connection-form">
             <Field label="API 基址" hint="仅允许本机地址；默认 http://127.0.0.1:8766"><input value={draftBase} onChange={(event) => setDraftBase(event.target.value)} spellCheck={false} /></Field>
             <Field label="数据模式"><Segmented label="数据模式" value={draftMode} options={[{ value: "auto", label: "自动" }, { value: "api", label: "仅 API" }, { value: "mock", label: "仅 Mock" }]} onChange={(value) => setDraftMode(value as RuntimeConfig["requestedMode"])} /></Field>
