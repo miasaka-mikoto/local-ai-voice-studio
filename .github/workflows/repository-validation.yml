@@ -30,9 +30,13 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: python -m pip install "pytest>=8,<9" httpx -r backend/requirements.txt
+        run: python -m pip install "pytest>=8,<9" httpx -r backend/requirements.txt imageio-ffmpeg==0.6.0
+      - name: Prepare isolated FFmpeg for real audio regression
+        run: python .github/scripts/install_test_ffmpeg.py
       - name: Run real offline regression tests
         run: python .github/scripts/offline_tests.py backend/tests adapters/tests
+        env:
+          REQUIRE_ZERO_SKIPS: '1'
   frontend:
     name: frontend (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -64,3 +68,22 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+  companion-browser:
+    name: Companion browser regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:e2e:companion

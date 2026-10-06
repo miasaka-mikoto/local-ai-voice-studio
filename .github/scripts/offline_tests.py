@@ -27,6 +27,8 @@ def main():
         suites=[xml] if xml.tag=='testsuite' else xml.findall('testsuite')
         counts={k:sum(int(s.get(k,'0')) for s in suites) for k in ['tests','failures','errors','skipped']}
         print('OFFLINE_TEST_COUNTS',counts,flush=True)
+        if os.environ.get('REQUIRE_ZERO_SKIPS') == '1' and counts['skipped']:
+            raise RuntimeError('Required regression coverage contains skipped tests')
         if counts['tests']-counts['skipped']<=0 or counts['failures'] or counts['errors']: return 1
         if os.environ.get('GITHUB_STEP_SUMMARY'):
             with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as out: out.write(f'Python tests: {counts}.\n')
