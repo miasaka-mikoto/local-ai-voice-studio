@@ -100,7 +100,11 @@ def _local_endpoint(value: object) -> tuple[str | None, str | None]:
     if not isinstance(value, str) or len(value) > 2048:
         return None, "ignored endpoint with invalid type or length"
     endpoint = value.strip()
-    parsed = urlsplit(endpoint)
+    try:
+        parsed = urlsplit(endpoint)
+        parsed.port  # Validate malformed or out-of-range ports without connecting.
+    except ValueError:
+        return None, "ignored malformed endpoint"
     if parsed.scheme not in {"http", "https", "ws", "wss"}:
         return None, "ignored endpoint with unsupported scheme"
     if (parsed.hostname or "").lower() not in {"127.0.0.1", "localhost", "::1"}:
@@ -115,7 +119,11 @@ def _local_endpoint(value: object) -> tuple[str | None, str | None]:
 def _public_source_url(value: object) -> str | None:
     if not isinstance(value, str):
         return None
-    parsed = urlsplit(value.strip())
+    try:
+        parsed = urlsplit(value.strip())
+        parsed.port
+    except ValueError:
+        return None
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         return None
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -208,7 +216,7 @@ def _allowed_roots(source: Path, supplied: Iterable[str | Path] | None) -> tuple
     for raw in raw_roots:
         text = str(raw)
         windows = PureWindowsPath(text)
-        if text.startswith(("\\\\", "//", "\\\\?\\")) or not windows.is_absolute():
+        if text.startswith(("\\\\", "//", "\\\\?\\")) or not Path(text).is_absolute():
             raise ValueError("allowed_roots must contain absolute local paths")
         roots.append(Path(text).resolve(strict=False))
     return tuple(roots)
@@ -228,10 +236,11 @@ def _safe_environment_root(
         value.startswith(("\\\\", "//", "\\\\?\\"))
         or ".." in windows.parts
         or (windows.drive and not windows.root)
-        or (windows.root and not windows.drive)
+        or (windows.root and not windows.drive and not Path(value).is_absolute())
+        or (windows.is_absolute() and os.name != "nt")
     ):
         return roots[0], "ignored unsafe environment_root"
-    candidate = Path(value) if windows.is_absolute() else source.parent / value
+    candidate = Path(value) if Path(value).is_absolute() else source.parent / value
     if not _is_within(candidate, roots):
         return roots[0], "ignored environment_root outside allowed roots"
     return candidate.resolve(strict=False), None
@@ -250,10 +259,11 @@ def _resolve_local_path(
         or value.startswith(("\\\\", "//", "\\\\?\\"))
         or ".." in windows.parts
         or (windows.drive and not windows.root)
-        or (windows.root and not windows.drive)
+        or (windows.root and not windows.drive and not Path(value).is_absolute())
+        or (windows.is_absolute() and os.name != "nt")
     ):
         return None, "ignored unsafe, network path, or ambiguous declared path"
-    candidate = Path(value) if windows.is_absolute() else base / value
+    candidate = Path(value) if Path(value).is_absolute() else base / value
     if not _is_within(candidate, roots):
         return None, "ignored declared path outside allowed roots"
     return str(candidate.resolve(strict=False)), None
@@ -387,6 +397,7 @@ def import_deployment_manifest(
 
     source = Path(path)
     manifest = _read_manifest(source)
+    source = source.resolve()
     schema_version = manifest.get("schema_version")
     if schema_version != "1.0":
         raise ValueError("unsupported deployment schema_version")
