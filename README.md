@@ -55,3 +55,7 @@ npm run build
 ```
 
 当前验证结果见 [TEST_EVIDENCE.md](TEST_EVIDENCE.md)。真实模型推理、训练、视频分离/混音、商业授权放行与桌面打包仍未完成。代码采用 MIT 许可证；第三方依赖和用户自备资源的许可分别见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## Offline companion browser regression
+
+The previously missing `frontend` command `npm run test:e2e:companion` now launches a real Chromium regression against the production DigitalCompanion component in an isolated Vite harness. Run `npm ci` and `npx playwright install chromium` first. The harness covers five visual states, suggestion callbacks, VRM file-permission gating and the disabled Live2D connector; HTTP requests outside its loopback test origin are blocked. It is component-level browser evidence, not microphone, live ASR/TTS, full application/server, VRM-model or human acceptance. CI separately uses a pinned test-only FFmpeg wheel for actual WebM/Opus audio conversion and requires zero skipped Python tests. No model API or physical device is started.

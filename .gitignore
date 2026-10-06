@@ -55,3 +55,6 @@ logs/
 # Local task artifacts
 context-vault/
 .codex/
+
+frontend/test-results/
+frontend/playwright-report/
