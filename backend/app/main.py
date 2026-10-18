@@ -463,8 +463,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.post("/api/v1/projects/{project_id}/imports")
     def import_lines(project_id: str, payload: ImportRequest) -> dict[str, Any]:
         if payload.lines is not None:
-            records = [_import_line_from_ui(value, index) for index, value in enumerate(payload.lines)]
             content = json.dumps(payload.lines, ensure_ascii=False)
+            if len(content.encode("utf-8")) > configured.max_import_bytes:
+                raise DomainError("import_too_large", "台词导入内容超过大小上限")
+            records = [_import_line_from_ui(value, index) for index, value in enumerate(payload.lines)]
             source_format, filename, warnings = "json", payload.filename or "frontend-lines.json", []
         else:
             content = payload.content
