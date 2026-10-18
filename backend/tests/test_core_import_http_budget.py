@@ -55,7 +55,7 @@ def run_isolated(case: str) -> None:
     check = unittest.TestCase()
 
     def request(app, path, payload):
-        status, headers, body = asyncio.run(asgi_request(
+        status, headers, body = runner.run(asgi_request(
             app, "POST", path,
             body=json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
             content_type="application/json",
@@ -75,7 +75,11 @@ def run_isolated(case: str) -> None:
                              for p in projects.rglob("*") if p.is_dir())
         return database, files, directories
 
-    with tempfile.TemporaryDirectory(prefix="isolated-app-") as directory:
+    with tempfile.TemporaryDirectory(prefix="isolated-app-") as directory, asyncio.Runner() as runner:
+        # Windows ProactorEventLoop creates an internal socketpair on startup.
+        # Initialize it before blocking connects; all app requests reuse this loop
+        # under the strict guard, and Runner closes after the patches exit.
+        runner.get_loop()
         root = Path(directory)
         bootstrap = Settings(root / "backend", root / "data", root / "db.sqlite3",
                              worker_enabled=False, max_import_bytes=256)
