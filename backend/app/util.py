@@ -50,14 +50,14 @@ def stable_hash(value: Any) -> str:
     return sha256_text(canonical_json(value))
 
 
-def safe_filename(value: str, fallback: str = "asset") -> str:
+def safe_filename(value: str, fallback: str = "asset", *, max_length: int = 120) -> str:
     cleaned = re.sub(r"[<>:\"/\\|?*\x00-\x1f]", "_", value).strip(" .")
     cleaned = re.sub(r"\s+", "_", cleaned)
     if not cleaned:
         cleaned = fallback
     if cleaned.upper().split(".", 1)[0] in WINDOWS_RESERVED:
         cleaned = f"_{cleaned}"
-    return cleaned[:120]
+    return cleaned[:max_length]
 
 
 def relative_posix(path: Path, root: Path) -> str:
