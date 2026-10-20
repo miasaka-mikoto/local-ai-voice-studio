@@ -53,7 +53,12 @@ class ProjectExporter:
                 )
                 candidate = f"{base}.wav"
                 if candidate.lower() in used_names:
-                    candidate = f"{base}_{line['id'][:8]}.wav"
+                    fallback = f"{base}_{line['id'][:8]}"
+                    candidate = f"{fallback}.wav"
+                    suffix = 2
+                    while candidate.lower() in used_names:
+                        candidate = f"{fallback}_{suffix}.wav"
+                        suffix += 1
                 used_names.add(candidate.lower())
                 source = resolve_relative(take["asset_path"], self.repository.settings.data_root)
                 target = audio_dir / candidate
