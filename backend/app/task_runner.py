@@ -81,20 +81,40 @@ class TaskRunner:
                 seed_index = completed
                 seed = int(seeds[seed_index]) if seed_index < len(seeds) else base_seed + seed_index
                 input_hash = self.mock.input_hash(line, seed, parameters)
-                filename = safe_filename(
-                    f"{line.get('asset_name') or line.get('external_line_id') or line['id']}_v{variant}_{input_hash[:10]}.wav"
-                )
-                path = (
+                name = line.get("asset_name") or line.get("external_line_id") or line["id"]
+                suffix = f"_v{variant}_{input_hash[:10]}.wav"
+                # Inspect one character beyond the existing limit before truncating.
+                filename = safe_filename(f"{name}{suffix}", max_length=121)
+                directory = (
                     self.repository.settings.data_root / "projects" / project_id / "takes" /
-                    line["id"] / filename
+                    line["id"]
                 )
-                generated = self.mock.generate(line, seed, parameters, path)
-                take = self.repository.register_take(
-                    line_id=line["id"], task_id=task["id"], variant_no=variant,
-                    engine_id=self.mock.id, engine_version=self.mock.version, seed=seed,
-                    parameters=parameters, input_hash=input_hash, path=generated.path,
-                    duration_ms=generated.duration_ms, qc=generated.qc,
-                )
+                existing = None
+                if len(filename) > 120:
+                    # A separate namespace cannot overwrite a legacy, truncated basename.
+                    # Keep the complete generation identity outside the readable-name budget.
+                    suffix = f"_v{variant}_{input_hash}.wav"
+                    prefix = safe_filename(str(name))[:120 - len(suffix)]
+                    # Reserve five bytes for the engine's temporary ".part" suffix.
+                    prefix = prefix.encode("utf-8")[:250 - len(suffix)].decode("utf-8", errors="ignore")
+                    filename = f"{prefix}{suffix}"
+                    directory = directory / "by-input"
+                    # Old takes retain their recorded paths, even when a newer naming rule
+                    # would choose another path. Do not create an unreferenced replacement.
+                    existing = next((take for take in self.repository.list_takes(line["id"])
+                                     if take["input_hash"] == input_hash
+                                     and take["variant_no"] == variant), None)
+                path = directory / filename
+                if existing is not None:
+                    take = existing
+                else:
+                    generated = self.mock.generate(line, seed, parameters, path)
+                    take = self.repository.register_take(
+                        line_id=line["id"], task_id=task["id"], variant_no=variant,
+                        engine_id=self.mock.id, engine_version=self.mock.version, seed=seed,
+                        parameters=parameters, input_hash=input_hash, path=generated.path,
+                        duration_ms=generated.duration_ms, qc=generated.qc,
+                    )
                 take_ids.append(take["id"])
                 completed += 1
                 self.repository.update_task_progress(
